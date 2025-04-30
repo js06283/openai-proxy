@@ -24,7 +24,7 @@ module.exports = async (req, res) => {
 
 			const { path, method = "POST", body } = JSON.parse(bodyData);
 
-			const url = `https://api.openai.com/v2${path}`;
+			const url = `https://api.openai.com/v1${path}`;
 			const headers = {
 				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
 				"Content-Type": "application/json",
