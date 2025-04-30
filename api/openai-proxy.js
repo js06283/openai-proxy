@@ -40,9 +40,29 @@ module.exports = async (req, res) => {
 				options.body = JSON.stringify(body || {});
 			}
 
-			const openaiRes = await fetch(url, options);
-			const data = await openaiRes.json();
-			return res.status(200).json(data);
+			const openaiRes = await fetch(
+				`https://api.openai.com/v2${path}`,
+				fetchOptions
+			);
+
+			// ✅ Log full response details
+			const text = await openaiRes.text();
+
+			try {
+				const data = JSON.parse(text);
+				return res.status(openaiRes.status).json(data);
+			} catch (parseErr) {
+				console.error("❌ Failed to parse OpenAI response as JSON");
+				console.error("🔁 Response status:", openaiRes.status);
+				console.error("🔁 Response body:", text);
+
+				return res.status(500).json({
+					error: "Proxy server error",
+					details: `OpenAI response could not be parsed as JSON`,
+					status: openaiRes.status,
+					raw: text,
+				});
+			}
 		} catch (err) {
 			console.error("Proxy error:", err);
 			return res
