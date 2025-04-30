@@ -42,7 +42,7 @@ module.exports = async (req, res) => {
 
 			const openaiRes = await fetch(
 				`https://api.openai.com/v2${path}`,
-				fetchOptions
+				options
 			);
 
 			// ✅ Log full response details
