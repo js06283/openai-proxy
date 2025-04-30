@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
 			}
 
 			const openaiRes = await fetch(
-				`https://api.openai.com/v2${path}`,
+				`https://api.openai.com/v1${path}`,
 				options
 			);
 
