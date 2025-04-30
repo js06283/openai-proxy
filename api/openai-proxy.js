@@ -36,7 +36,7 @@ module.exports = async (req, res) => {
 				headers,
 			};
 
-			if (req.method !== "GET") {
+			if (method !== "GET" && method !== "HEAD") {
 				options.body = JSON.stringify(body || {});
 			}
 
