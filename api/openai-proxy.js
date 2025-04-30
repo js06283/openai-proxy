@@ -23,26 +23,24 @@ module.exports = async (req, res) => {
 			}
 
 			const { path, method = "POST", body } = JSON.parse(bodyData);
-			if (req.method == "GET") {
-				const openaiRes = await fetch(`https://api.openai.com/v2${path}`, {
-					method,
-					headers: {
-						Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-						"Content-Type": "application/json",
-						"OpenAI-Beta": "assistants=v2",
-					},
-				});
-			} else {
-				const openaiRes = await fetch(`https://api.openai.com/v2${path}`, {
-					method,
-					headers: {
-						Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-						"Content-Type": "application/json",
-						"OpenAI-Beta": "assistants=v2",
-					},
-					body: JSON.stringify(body || {}),
-				});
+
+			const url = `https://api.openai.com/v2${path}`;
+			const headers = {
+				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+				"Content-Type": "application/json",
+				"OpenAI-Beta": "assistants=v2",
+			};
+
+			const options = {
+				method,
+				headers,
+			};
+
+			if (req.method !== "GET") {
+				options.body = JSON.stringify(body || {});
 			}
+
+			const openaiRes = await fetch(url, options);
 			const data = await openaiRes.json();
 			return res.status(200).json(data);
 		} catch (err) {
