@@ -16,6 +16,8 @@ module.exports = async (req, res) => {
 		bodyData += chunk;
 	});
 
+	console.log(process.env.OPENAI_API_KEY);
+
 	req.on("end", async () => {
 		try {
 			if (!bodyData) {
