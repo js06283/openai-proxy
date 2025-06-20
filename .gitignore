@@ -1,3 +1,19 @@
 .vercel
 logs/
 *.log
+
+# Google Cloud credentials
+*.json
+!package.json
+!package-lock.json
+!vercel.json
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Service account files
+*-service-account*.json
+*firestore*.json
+*credentials*.json

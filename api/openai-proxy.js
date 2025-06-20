@@ -1,6 +1,52 @@
 const fetch = require("node-fetch");
 const fs = require("fs").promises;
 const path = require("path");
+const { Firestore } = require("@google-cloud/firestore");
+
+// Initialize Firestore with credentials
+let firestore;
+try {
+	// For Vercel deployment, use service account JSON from environment variable
+	if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+		const credentials = JSON.parse(
+			process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON
+		);
+		firestore = new Firestore({
+			projectId: credentials.project_id,
+			credentials: credentials,
+		});
+	} else {
+		// For local development, use default credentials
+		firestore = new Firestore();
+	}
+} catch (err) {
+	console.error("❌ Failed to initialize Firestore:", err);
+	firestore = null;
+}
+
+// Direct Firestore logging function
+async function logToFirestore(data) {
+	try {
+		if (!firestore) {
+			console.log("⚠️ Firestore not initialized, skipping logging");
+			return;
+		}
+
+		const logEntry = {
+			timestamp: new Date().toISOString(),
+			...data,
+		};
+
+		// Add document to Firestore
+		const docRef = await firestore.collection("api_logs").add(logEntry);
+
+		console.log(
+			`📝 Logged to Firestore: ${data.path} - ${logEntry.timestamp} (ID: ${docRef.id})`
+		);
+	} catch (err) {
+		console.error("❌ Firestore logging error:", err);
+	}
+}
 
 // Data logging functions
 async function logInteraction(data) {
@@ -78,15 +124,14 @@ module.exports = async (req, res) => {
 				options.body = JSON.stringify(body || {});
 			}
 
-			// Log the request
-			await logInteraction({
+			// Log the request to Firestore
+			await logToFirestore({
 				type: "request",
 				path,
 				method,
-				body,
+				body: body ? JSON.stringify(body).substring(0, 1000) : null, // Truncate large bodies
 				userAgent: req.headers["user-agent"],
 				ip: req.headers["x-forwarded-for"] || req.connection.remoteAddress,
-				timestamp: new Date().toISOString(),
 			});
 
 			const openaiRes = await fetch(
@@ -101,16 +146,15 @@ module.exports = async (req, res) => {
 			try {
 				const data = JSON.parse(text);
 
-				// Log the response
-				await logInteraction({
+				// Log the response to Firestore
+				await logToFirestore({
 					type: "response",
 					path,
 					method,
 					status: openaiRes.status,
 					responseTime,
-					responseData: data,
 					responseSize: text.length,
-					timestamp: new Date().toISOString(),
+					responseData: JSON.stringify(data).substring(0, 1000), // Truncate large responses
 				});
 
 				return res.status(openaiRes.status).json(data);
@@ -119,16 +163,15 @@ module.exports = async (req, res) => {
 				console.error("🔁 Response status:", openaiRes.status);
 				console.error("🔁 Response body:", text);
 
-				// Log the error
-				await logInteraction({
+				// Log the error to Firestore
+				await logToFirestore({
 					type: "error",
 					path,
 					method,
 					status: openaiRes.status,
 					responseTime,
 					error: "JSON parse error",
-					rawResponse: text,
-					timestamp: new Date().toISOString(),
+					rawResponse: text.substring(0, 1000), // Truncate large responses
 				});
 
 				return res.status(500).json({
@@ -141,12 +184,11 @@ module.exports = async (req, res) => {
 		} catch (err) {
 			console.error("Proxy error:", err);
 
-			// Log the error
-			await logInteraction({
+			// Log the error to Firestore
+			await logToFirestore({
 				type: "error",
 				error: err.message,
-				stack: err.stack,
-				timestamp: new Date().toISOString(),
+				stack: err.stack?.substring(0, 1000), // Truncate large stack traces
 			});
 
 			return res
