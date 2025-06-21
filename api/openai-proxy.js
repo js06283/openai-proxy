@@ -154,7 +154,7 @@ module.exports = async (req, res) => {
 					status: openaiRes.status,
 					responseTime,
 					responseSize: text.length,
-					responseData: JSON.stringify(data).substring(0, 1000), // Truncate large responses
+					responseData: JSON.stringify(data).substring(0, 10000), // Increased limit for complete responses
 				});
 
 				return res.status(openaiRes.status).json(data);

@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Thread Viewer - Chat Conversations</title>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+					sans-serif;
+				background: #f5f5f5;
+				color: #333;
+				line-height: 1.6;
+			}
+
+			.container {
+				max-width: 1200px;
+				margin: 0 auto;
+				padding: 20px;
+			}
+
+			.header {
+				background: white;
+				padding: 20px;
+				border-radius: 12px;
+				box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+				margin-bottom: 20px;
+			}
+
+			.header h1 {
+				color: #2c3e50;
+				margin-bottom: 10px;
+			}
+
+			.header p {
+				color: #7f8c8d;
+				font-size: 14px;
+			}
+
+			.loading {
+				text-align: center;
+				padding: 40px;
+				color: #7f8c8d;
+			}
+
+			.error {
+				background: #e74c3c;
+				color: white;
+				padding: 15px;
+				border-radius: 8px;
+				margin-bottom: 20px;
+			}
+
+			.threads-container {
+				display: grid;
+				gap: 20px;
+			}
+
+			.thread-card {
+				background: white;
+				border-radius: 12px;
+				box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+				overflow: hidden;
+				transition: transform 0.2s, box-shadow 0.2s;
+			}
+
+			.thread-card:hover {
+				transform: translateY(-2px);
+				box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+			}
+
+			.thread-header {
+				padding: 20px;
+				background: #f8f9fa;
+				border-bottom: 1px solid #e9ecef;
+				cursor: pointer;
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+
+			.thread-header:hover {
+				background: #e9ecef;
+			}
+
+			.thread-id {
+				font-family: "Monaco", "Menlo", monospace;
+				font-size: 14px;
+				color: #495057;
+				background: #e9ecef;
+				padding: 4px 8px;
+				border-radius: 4px;
+			}
+
+			.thread-meta {
+				display: flex;
+				gap: 15px;
+				align-items: center;
+				font-size: 14px;
+				color: #6c757d;
+			}
+
+			.message-count {
+				background: #007bff;
+				color: white;
+				padding: 2px 8px;
+				border-radius: 12px;
+				font-size: 12px;
+				font-weight: bold;
+			}
+
+			.last-message {
+				font-style: italic;
+			}
+
+			.thread-content {
+				max-height: 0;
+				overflow: hidden;
+				transition: max-height 0.3s ease;
+			}
+
+			.thread-content.expanded {
+				max-height: none;
+				overflow: visible;
+			}
+
+			.messages {
+				padding: 20px;
+				max-height: 800px;
+				overflow-y: auto;
+			}
+
+			.message {
+				margin-bottom: 20px;
+				padding: 15px;
+				border-radius: 8px;
+				position: relative;
+			}
+
+			.message.user {
+				background: #e3f2fd;
+				border-left: 4px solid #2196f3;
+				margin-left: 20px;
+			}
+
+			.message.assistant {
+				background: #f3e5f5;
+				border-left: 4px solid #9c27b0;
+				margin-right: 20px;
+			}
+
+			.message-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				margin-bottom: 8px;
+				font-size: 12px;
+				color: #6c757d;
+			}
+
+			.message-role {
+				font-weight: bold;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+
+			.message-time {
+				font-family: "Monaco", "Menlo", monospace;
+			}
+
+			.message-content {
+				white-space: pre-wrap;
+				word-wrap: break-word;
+				line-height: 1.5;
+			}
+
+			.system-prompt {
+				background: #fff3cd;
+				border: 1px solid #ffeaa7;
+				border-radius: 8px;
+				padding: 15px;
+				margin-bottom: 20px;
+				font-style: italic;
+				color: #856404;
+			}
+
+			.system-prompt-header {
+				font-weight: bold;
+				margin-bottom: 8px;
+				color: #856404;
+			}
+
+			.response-time {
+				background: #e8f5e8;
+				color: #2d5a2d;
+				padding: 4px 8px;
+				border-radius: 12px;
+				font-size: 11px;
+				font-weight: bold;
+				margin-left: 10px;
+			}
+
+			.expand-icon {
+				transition: transform 0.2s;
+			}
+
+			.expand-icon.expanded {
+				transform: rotate(180deg);
+			}
+
+			.stats {
+				background: white;
+				padding: 20px;
+				border-radius: 12px;
+				box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+				margin-bottom: 20px;
+			}
+
+			.stats-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+				gap: 20px;
+			}
+
+			.stat-item {
+				text-align: center;
+			}
+
+			.stat-number {
+				font-size: 2em;
+				font-weight: bold;
+				color: #2c3e50;
+			}
+
+			.stat-label {
+				color: #7f8c8d;
+				font-size: 14px;
+				margin-top: 5px;
+			}
+
+			@media (max-width: 768px) {
+				.container {
+					padding: 10px;
+				}
+
+				.thread-meta {
+					flex-direction: column;
+					align-items: flex-start;
+					gap: 5px;
+				}
+
+				.message.user,
+				.message.assistant {
+					margin-left: 0;
+					margin-right: 0;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<div class="header">
+				<h1>🧵 Thread Viewer</h1>
+				<p>View all chat conversations from your Firestore database</p>
+			</div>
+
+			<div id="loading" class="loading">
+				<p>Loading conversations...</p>
+			</div>
+
+			<div id="error" class="error" style="display: none"></div>
+
+			<div id="stats" class="stats" style="display: none">
+				<div class="stats-grid">
+					<div class="stat-item">
+						<div class="stat-number" id="total-threads">0</div>
+						<div class="stat-label">Total Threads</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-number" id="total-messages">0</div>
+						<div class="stat-label">Total Messages</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-number" id="avg-messages">0</div>
+						<div class="stat-label">Avg Messages/Thread</div>
+					</div>
+				</div>
+			</div>
+
+			<div id="threads" class="threads-container"></div>
+		</div>
+
+		<script>
+			// Configuration - Update this URL to match your API endpoint
+			// const API_URL = "https://your-vercel-domain.vercel.app/api/threads";
+			const API_URL = "http://localhost:3000/api/threads";
+			// For local testing, use: const API_URL = 'http://localhost:3000/api/threads';
+
+			let threadsData = [];
+
+			async function fetchThreads() {
+				try {
+					const response = await fetch(API_URL);
+					if (!response.ok) {
+						throw new Error(`HTTP error! status: ${response.status}`);
+					}
+					const data = await response.json();
+					threadsData = data.threads || [];
+					console.log("📊 Received threads data:", threadsData);
+					console.log("📊 Number of threads:", threadsData.length);
+
+					// Debug: Check for system prompts and response times
+					threadsData.forEach((thread, index) => {
+						console.log(`Thread ${index}:`, {
+							threadId: thread.threadId,
+							hasSystemPrompt: !!thread.systemPrompt,
+							systemPrompt: thread.systemPrompt,
+							messages: thread.messages.map((msg) => ({
+								role: msg.role,
+								hasResponseTime: !!msg.responseTime,
+								responseTime: msg.responseTime,
+							})),
+						});
+					});
+
+					displayThreads();
+				} catch (error) {
+					console.error("Error fetching threads:", error);
+					document.getElementById("error").style.display = "block";
+					document.getElementById(
+						"error"
+					).textContent = `Error loading conversations: ${error.message}`;
+				} finally {
+					document.getElementById("loading").style.display = "none";
+				}
+			}
+
+			function displayThreads() {
+				const threadsContainer = document.getElementById("threads");
+				const statsContainer = document.getElementById("stats");
+
+				if (threadsData.length === 0) {
+					threadsContainer.innerHTML =
+						'<div class="loading"><p>No conversations found.</p></div>';
+					return;
+				}
+
+				// Update stats
+				const totalMessages = threadsData.reduce(
+					(sum, thread) => sum + thread.messages.length,
+					0
+				);
+				const avgMessages = (totalMessages / threadsData.length).toFixed(1);
+
+				document.getElementById("total-threads").textContent =
+					threadsData.length;
+				document.getElementById("total-messages").textContent = totalMessages;
+				document.getElementById("avg-messages").textContent = avgMessages;
+				statsContainer.style.display = "block";
+
+				// Display threads
+				threadsContainer.innerHTML = threadsData
+					.map((thread, index) => {
+						const firstMessage = thread.messages[0];
+						const lastMessage = thread.messages[thread.messages.length - 1];
+						const preview = firstMessage
+							? firstMessage.content.substring(0, 100) +
+							  (firstMessage.content.length > 100 ? "..." : "")
+							: "No messages";
+						const lastTime = lastMessage
+							? new Date(lastMessage.timestamp).toLocaleString()
+							: "Unknown";
+
+						return `
+			                 <div class="thread-card">
+			                     <div class="thread-header" onclick="toggleThread(${index})">
+			                         <div>
+			                             <div class="thread-id">${thread.threadId}</div>
+			                             <div class="thread-meta">
+			                                 <span class="message-count">${
+																					thread.messages.length
+																				} messages</span>
+			                                 <span class="last-message">Last: ${lastTime}</span>
+			                             </div>
+			                         </div>
+			                         <div class="expand-icon" id="expand-${index}">▼</div>
+			                     </div>
+			                     <div class="thread-content" id="content-${index}">
+			                         <div class="messages">
+			                             ${
+																			thread.systemPrompt
+																				? `
+			                                 <div class="system-prompt">
+			                                     <div class="system-prompt-header">🤖 System Prompt:</div>
+			                                     <div>${thread.systemPrompt}</div>
+			                                 </div>
+			                             `
+																				: ""
+																		}
+			                             ${thread.messages
+																			.map(
+																				(message) => `
+			                                 <div class="message ${message.role}">
+			                                     <div class="message-header">
+			                                         <span class="message-role">${
+																									message.role === "user"
+																										? "👤 User"
+																										: "🤖 Assistant"
+																								}</span>
+			                                         <div style="display: flex; align-items: center;">
+			                                             <span class="message-time">${new Date(
+																											message.timestamp
+																										).toLocaleString()}</span>
+			                                             ${
+																											message.responseTime
+																												? `<span class="response-time">${message.responseTime}ms</span>`
+																												: ""
+																										}
+			                                         </div>
+			                                     </div>
+			                                     <div class="message-content">${
+																							message.content
+																						}</div>
+			                                 </div>
+			                             `
+																			)
+																			.join("")}
+			                         </div>
+			                     </div>
+			                 </div>
+			             `;
+					})
+					.join("");
+			}
+
+			function toggleThread(index) {
+				const content = document.getElementById(`content-${index}`);
+				const icon = document.getElementById(`expand-${index}`);
+
+				content.classList.toggle("expanded");
+				icon.classList.toggle("expanded");
+			}
+
+			// Load threads when page loads
+			document.addEventListener("DOMContentLoaded", fetchThreads);
+		</script>
+	</body>
+</html>
