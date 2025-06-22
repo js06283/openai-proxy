@@ -26,6 +26,7 @@ function extractMessagesFromLog(log) {
 					if (responseData.data && Array.isArray(responseData.data)) {
 						for (const message of responseData.data) {
 							if (message.role === "assistant" && message.content) {
+								// Extract text content
 								for (const contentItem of message.content) {
 									if (
 										contentItem.type === "text" &&
@@ -37,13 +38,265 @@ function extractMessagesFromLog(log) {
 											content: contentItem.text.value,
 											timestamp: log.timestamp,
 											responseTime: log.responseTime || null,
+											contentType: "text",
 										});
+									}
+								}
+
+								// Extract tool calls (what the assistant requests)
+								if (message.tool_calls && Array.isArray(message.tool_calls)) {
+									message.tool_calls.forEach((toolCall) => {
+										if (toolCall.type === "code_interpreter") {
+											// Extract code input from tool call
+											if (
+												toolCall.code_interpreter &&
+												toolCall.code_interpreter.input
+											) {
+												messages.push({
+													role: "assistant",
+													content: toolCall.code_interpreter.input,
+													timestamp: log.timestamp,
+													responseTime: log.responseTime || null,
+													contentType: "code_input",
+													language: "python",
+													toolCallId: toolCall.id,
+													messageType: "tool_call",
+												});
+											}
+										} else if (toolCall.type === "function") {
+											// Extract function calls
+											messages.push({
+												role: "assistant",
+												content: `[Function Call: ${toolCall.function.name}]`,
+												timestamp: log.timestamp,
+												responseTime: log.responseTime || null,
+												contentType: "function_call",
+												functionName: toolCall.function.name,
+												functionArgs: toolCall.function.arguments,
+												toolCallId: toolCall.id,
+												messageType: "tool_call",
+											});
+										} else if (toolCall.type === "file_search") {
+											// Extract file search calls
+											messages.push({
+												role: "assistant",
+												content: `[File Search: ${
+													toolCall.file_search.query || "query"
+												}]`,
+												timestamp: log.timestamp,
+												responseTime: log.responseTime || null,
+												contentType: "file_search",
+												searchQuery: toolCall.file_search.query,
+												toolCallId: toolCall.id,
+												messageType: "tool_call",
+											});
+										}
+									});
+								}
+
+								// Extract tool responses (what the tools return)
+								if (
+									message.tool_responses &&
+									Array.isArray(message.tool_responses)
+								) {
+									message.tool_responses.forEach((toolResponse) => {
+										if (toolResponse.type === "code_interpreter") {
+											// Extract code outputs from tool response
+											if (
+												toolResponse.code_interpreter &&
+												toolResponse.code_interpreter.outputs &&
+												Array.isArray(toolResponse.code_interpreter.outputs)
+											) {
+												toolResponse.code_interpreter.outputs.forEach(
+													(output) => {
+														if (output.type === "logs") {
+															messages.push({
+																role: "assistant",
+																content: output.logs,
+																timestamp: log.timestamp,
+																responseTime: log.responseTime || null,
+																contentType: "code_output",
+																outputType: "logs",
+																toolCallId: toolResponse.tool_call_id,
+																messageType: "tool_response",
+															});
+														} else if (output.type === "image") {
+															messages.push({
+																role: "assistant",
+																content: `[Generated Image: ${output.image.file_id}]`,
+																timestamp: log.timestamp,
+																responseTime: log.responseTime || null,
+																contentType: "code_output",
+																outputType: "image",
+																imageId: output.image.file_id,
+																toolCallId: toolResponse.tool_call_id,
+																messageType: "tool_response",
+															});
+														} else if (output.type === "error") {
+															messages.push({
+																role: "assistant",
+																content: `Error: ${output.error}`,
+																timestamp: log.timestamp,
+																responseTime: log.responseTime || null,
+																contentType: "code_output",
+																outputType: "error",
+																toolCallId: toolResponse.tool_call_id,
+																messageType: "tool_response",
+															});
+														}
+													}
+												);
+											}
+										} else if (toolResponse.type === "function") {
+											// Extract function responses
+											messages.push({
+												role: "assistant",
+												content: `[Function Response: ${toolResponse.function.name}]`,
+												timestamp: log.timestamp,
+												responseTime: log.responseTime || null,
+												contentType: "function_response",
+												functionName: toolResponse.function.name,
+												functionOutput: toolResponse.function.output,
+												toolCallId: toolResponse.tool_call_id,
+												messageType: "tool_response",
+											});
+										} else if (toolResponse.type === "file_search") {
+											// Extract file search responses
+											messages.push({
+												role: "assistant",
+												content: `[File Search Results: ${
+													toolResponse.file_search.results
+														? toolResponse.file_search.results.length
+														: 0
+												} files found]`,
+												timestamp: log.timestamp,
+												responseTime: log.responseTime || null,
+												contentType: "file_search_response",
+												fileCount: toolResponse.file_search.results
+													? toolResponse.file_search.results.length
+													: 0,
+												toolCallId: toolResponse.tool_call_id,
+												messageType: "tool_response",
+											});
+										}
+									});
+								}
+
+								// Also check for legacy content-based tool outputs (fallback)
+								if (message.content && Array.isArray(message.content)) {
+									for (const contentItem of message.content) {
+										if (
+											contentItem.type === "code_interpreter" &&
+											contentItem.code_interpreter
+										) {
+											// Extract code input
+											if (contentItem.code_interpreter.input) {
+												messages.push({
+													role: "assistant",
+													content: contentItem.code_interpreter.input,
+													timestamp: log.timestamp,
+													responseTime: log.responseTime || null,
+													contentType: "code_input",
+													language: "python",
+													legacy: true,
+													messageType: "legacy_content",
+												});
+											}
+
+											// Extract code outputs
+											if (
+												contentItem.code_interpreter.outputs &&
+												Array.isArray(contentItem.code_interpreter.outputs)
+											) {
+												contentItem.code_interpreter.outputs.forEach(
+													(output) => {
+														if (output.type === "logs") {
+															messages.push({
+																role: "assistant",
+																content: output.logs,
+																timestamp: log.timestamp,
+																responseTime: log.responseTime || null,
+																contentType: "code_output",
+																outputType: "logs",
+																legacy: true,
+																messageType: "legacy_content",
+															});
+														} else if (output.type === "image") {
+															messages.push({
+																role: "assistant",
+																content: `[Generated Image: ${output.image.file_id}]`,
+																timestamp: log.timestamp,
+																responseTime: log.responseTime || null,
+																contentType: "code_output",
+																outputType: "image",
+																imageId: output.image.file_id,
+																legacy: true,
+																messageType: "legacy_content",
+															});
+														} else if (output.type === "error") {
+															messages.push({
+																role: "assistant",
+																content: `Error: ${output.error}`,
+																timestamp: log.timestamp,
+																responseTime: log.responseTime || null,
+																contentType: "code_output",
+																outputType: "error",
+																legacy: true,
+																messageType: "legacy_content",
+															});
+														}
+													}
+												);
+											}
+										}
+
+										// Extract file search outputs
+										if (
+											contentItem.type === "file_search" &&
+											contentItem.file_search
+										) {
+											messages.push({
+												role: "assistant",
+												content: `[File Search Results: ${
+													contentItem.file_search.results
+														? contentItem.file_search.results.length
+														: 0
+												} files found]`,
+												timestamp: log.timestamp,
+												responseTime: log.responseTime || null,
+												contentType: "file_search",
+												fileCount: contentItem.file_search.results
+													? contentItem.file_search.results.length
+													: 0,
+												legacy: true,
+												messageType: "legacy_content",
+											});
+										}
+
+										// Extract function call outputs
+										if (
+											contentItem.type === "function" &&
+											contentItem.function
+										) {
+											messages.push({
+												role: "assistant",
+												content: `[Function Call: ${contentItem.function.name}]`,
+												timestamp: log.timestamp,
+												responseTime: log.responseTime || null,
+												contentType: "function_call",
+												functionName: contentItem.function.name,
+												functionArgs: contentItem.function.arguments,
+												legacy: true,
+												messageType: "legacy_content",
+											});
+										}
 									}
 								}
 							}
 						}
 					}
 				} catch (e) {
+					console.log("Error parsing responseData:", e.message);
 					// Try to extract assistant content from raw string as fallback
 					if (log.responseData.includes('"role":"assistant"')) {
 						// Simple regex to extract text content from assistant messages
@@ -56,6 +309,7 @@ function extractMessagesFromLog(log) {
 								content: assistantMatch[1],
 								timestamp: log.timestamp,
 								responseTime: log.responseTime || null,
+								contentType: "text",
 							});
 						}
 					}
@@ -64,6 +318,7 @@ function extractMessagesFromLog(log) {
 		}
 		return messages;
 	} catch (err) {
+		console.log("Error in extractMessagesFromLog:", err);
 		return [];
 	}
 }

@@ -175,9 +175,179 @@
 			}
 
 			.message-content {
+				margin-top: 8px;
+				line-height: 1.5;
+				word-wrap: break-word;
+			}
+
+			/* Code Input Styling */
+			.message.code-input .message-content pre {
+				background: #f8f9fa;
+				border: 1px solid #e9ecef;
+				border-radius: 6px;
+				padding: 12px;
+				margin: 0;
+				overflow-x: auto;
+				font-family: "Courier New", monospace;
+				font-size: 13px;
+				line-height: 1.4;
+				color: #333;
 				white-space: pre-wrap;
 				word-wrap: break-word;
-				line-height: 1.5;
+			}
+
+			.message.code-input .message-content code {
+				background: none;
+				padding: 0;
+				border-radius: 0;
+				font-family: inherit;
+			}
+
+			/* Code Output Styling */
+			.message.code-output .message-content pre.code-logs {
+				background: #f8f9fa;
+				border: 1px solid #e9ecef;
+				border-radius: 6px;
+				padding: 12px;
+				margin: 0;
+				overflow-x: auto;
+				font-family: "Courier New", monospace;
+				font-size: 13px;
+				line-height: 1.4;
+				color: #333;
+				white-space: pre-wrap;
+				word-wrap: break-word;
+			}
+
+			.message.code-output .message-content .code-error {
+				background: #fff5f5;
+				border: 1px solid #fed7d7;
+				border-radius: 6px;
+				padding: 12px;
+				margin: 0;
+				color: #c53030;
+				font-family: "Courier New", monospace;
+				font-size: 13px;
+			}
+
+			.message.code-output .message-content .generated-image {
+				background: #f8f9fa;
+				border: 1px solid #e9ecef;
+				border-radius: 6px;
+				padding: 12px;
+				margin: 0;
+				color: #666;
+				font-style: italic;
+			}
+
+			/* File Search Styling */
+			.message.file-search .message-content .file-search-results {
+				background: #f0f8ff;
+				border: 1px solid #b3d9ff;
+				border-radius: 6px;
+				padding: 12px;
+				margin: 0;
+				color: #0066cc;
+				font-weight: 500;
+			}
+
+			/* Function Call Styling */
+			.message.function-call .message-content .function-call-info {
+				background: #fff8e1;
+				border: 1px solid #ffcc02;
+				border-radius: 6px;
+				padding: 12px;
+				margin: 0;
+				color: #f57c00;
+				font-weight: 500;
+			}
+
+			/* Tool Call vs Tool Response Styling */
+			.message.tool-call {
+				background: #e8f4fd;
+				border-left: 4px solid #17a2b8;
+			}
+
+			.message.tool-response {
+				background: #f0f8ff;
+				border-left: 4px solid #28a745;
+			}
+
+			.message.tool-call .message-content .tool-call-info {
+				background: #e8f4fd;
+				border: 1px solid #17a2b8;
+				border-radius: 6px;
+				padding: 12px;
+				margin: 0;
+				color: #0c5460;
+				font-weight: 500;
+			}
+
+			.message.tool-response .message-content .tool-response-info {
+				background: #f0f8ff;
+				border: 1px solid #28a745;
+				border-radius: 6px;
+				padding: 12px;
+				margin: 0;
+				color: #155724;
+				font-weight: 500;
+			}
+
+			/* Function Response Styling */
+			.message.function-response .message-content .function-response-info {
+				background: #fff3cd;
+				border: 1px solid #ffc107;
+				border-radius: 6px;
+				padding: 12px;
+				margin: 0;
+				color: #856404;
+				font-weight: 500;
+			}
+
+			/* File Search Response Styling */
+			.message.file-search-response
+				.message-content
+				.file-search-response-info {
+				background: #f8f9fa;
+				border: 1px solid #6c757d;
+				border-radius: 6px;
+				padding: 12px;
+				margin: 0;
+				color: #495057;
+				font-weight: 500;
+			}
+
+			/* Content Type Indicators */
+			.message.code-input .message-role {
+				color: #0066cc;
+			}
+
+			.message.code-output .message-role {
+				color: #28a745;
+			}
+
+			.message.file-search .message-role {
+				color: #6f42c1;
+			}
+
+			.message.function-call .message-role {
+				color: #fd7e14;
+			}
+
+			.message.tool-call .message-role {
+				color: #17a2b8;
+			}
+
+			.message.tool-response .message-role {
+				color: #28a745;
+			}
+
+			.message.function-response .message-role {
+				color: #ffc107;
+			}
+
+			.message.file-search-response .message-role {
+				color: #6c757d;
 			}
 
 			.system-prompt {
@@ -404,15 +574,134 @@
 																				: ""
 																		}
 			                             ${thread.messages
-																			.map(
-																				(message) => `
-			                                 <div class="message ${message.role}">
+																			.map((message) => {
+																				// Determine content type and styling
+																				let contentType =
+																					message.contentType || "text";
+																				let contentDisplay = message.content;
+																				let contentClass = "";
+																				let contentIcon = "";
+
+																				// Handle different content types
+																				if (contentType === "code_input") {
+																					contentClass = "code-input";
+																					contentIcon = "💻";
+																					contentDisplay = `<pre><code>${message.content}</code></pre>`;
+																				} else if (
+																					contentType === "code_output"
+																				) {
+																					contentClass = "code-output";
+																					if (message.outputType === "logs") {
+																						contentIcon = "📊";
+																						contentDisplay = `<pre class="code-logs">${message.content}</pre>`;
+																					} else if (
+																						message.outputType === "image"
+																					) {
+																						contentIcon = "🖼️";
+																						contentDisplay = `<div class="generated-image">${message.content}</div>`;
+																					} else if (
+																						message.outputType === "error"
+																					) {
+																						contentIcon = "❌";
+																						contentDisplay = `<div class="code-error">${message.content}</div>`;
+																					}
+																				} else if (
+																					contentType === "file_search"
+																				) {
+																					contentClass = "file-search";
+																					contentIcon = "📁";
+																					contentDisplay = `<div class="file-search-results">${message.content}</div>`;
+																				} else if (
+																					contentType === "function_call"
+																				) {
+																					contentClass = "function-call";
+																					contentIcon = "⚙️";
+																					contentDisplay = `<div class="function-call-info">${message.content}</div>`;
+																				} else if (
+																					contentType === "function_response"
+																				) {
+																					contentClass = "function-response";
+																					contentIcon = "🔄";
+																					contentDisplay = `<div class="function-response-info">${message.content}</div>`;
+																				} else if (
+																					contentType === "file_search_response"
+																				) {
+																					contentClass = "file-search-response";
+																					contentIcon = "📋";
+																					contentDisplay = `<div class="file-search-response-info">${message.content}</div>`;
+																				} else {
+																					// Regular text content
+																					contentIcon =
+																						message.role === "user"
+																							? "👤"
+																							: "🤖";
+																				}
+
+																				// Add messageType class for tool calls vs responses
+																				if (
+																					message.messageType === "tool_call"
+																				) {
+																					contentClass += " tool-call";
+																					if (contentType === "code_input") {
+																						contentIcon = "🔧";
+																					} else if (
+																						contentType === "function_call"
+																					) {
+																						contentIcon = "📞";
+																					} else if (
+																						contentType === "file_search"
+																					) {
+																						contentIcon = "🔍";
+																					}
+																				} else if (
+																					message.messageType ===
+																					"tool_response"
+																				) {
+																					contentClass += " tool-response";
+																					if (contentType === "code_output") {
+																						contentIcon = "📤";
+																					} else if (
+																						contentType === "function_response"
+																					) {
+																						contentIcon = "📥";
+																					} else if (
+																						contentType ===
+																						"file_search_response"
+																					) {
+																						contentIcon = "📄";
+																					}
+																				}
+
+																				return `
+			                                 <div class="message ${
+																					message.role
+																				} ${contentClass}">
 			                                     <div class="message-header">
-			                                         <span class="message-role">${
-																									message.role === "user"
-																										? "👤 User"
-																										: "🤖 Assistant"
-																								}</span>
+			                                         <span class="message-role">${contentIcon} ${
+																					message.role === "user"
+																						? "User"
+																						: contentType === "code_input"
+																						? "Code Input"
+																						: contentType === "code_output"
+																						? "Code Output"
+																						: contentType === "file_search"
+																						? "File Search"
+																						: contentType === "function_call"
+																						? "Function Call"
+																						: contentType ===
+																						  "function_response"
+																						? "Function Response"
+																						: contentType ===
+																						  "file_search_response"
+																						? "File Search Response"
+																						: message.messageType ===
+																						  "tool_call"
+																						? "Tool Call"
+																						: message.messageType ===
+																						  "tool_response"
+																						? "Tool Response"
+																						: "Assistant"
+																				}</span>
 			                                         <div style="display: flex; align-items: center;">
 			                                             <span class="message-time">${new Date(
 																											message.timestamp
@@ -424,12 +713,10 @@
 																										}
 			                                         </div>
 			                                     </div>
-			                                     <div class="message-content">${
-																							message.content
-																						}</div>
+			                                     <div class="message-content">${contentDisplay}</div>
 			                                 </div>
-			                             `
-																			)
+			                             `;
+																			})
 																			.join("")}
 			                         </div>
 			                     </div>
