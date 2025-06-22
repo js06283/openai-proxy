@@ -48,6 +48,112 @@ async function logToFirestore(data) {
 	}
 }
 
+// Enhanced logging for tool calls and responses
+async function logToolInteractions(data) {
+	try {
+		if (!firestore) {
+			console.log("⚠️ Firestore not initialized, skipping tool logging");
+			return;
+		}
+
+		if (data.data && Array.isArray(data.data)) {
+			for (const message of data.data) {
+				if (message.role === "assistant") {
+					// Log tool calls
+					if (message.tool_calls && Array.isArray(message.tool_calls)) {
+						for (const toolCall of message.tool_calls) {
+							const toolLogEntry = {
+								timestamp: new Date().toISOString(),
+								type: "tool_call",
+								messageId: message.id,
+								toolCallId: toolCall.id,
+								toolType: toolCall.type,
+								threadId: data.threadId || "unknown",
+								path: data.path || "unknown",
+							};
+
+							if (
+								toolCall.type === "code_interpreter" &&
+								toolCall.code_interpreter
+							) {
+								toolLogEntry.codeInput = toolCall.code_interpreter.input;
+								toolLogEntry.language = "python";
+							} else if (toolCall.type === "function" && toolCall.function) {
+								toolLogEntry.functionName = toolCall.function.name;
+								toolLogEntry.functionArgs = toolCall.function.arguments;
+							} else if (
+								toolCall.type === "file_search" &&
+								toolCall.file_search
+							) {
+								toolLogEntry.searchQuery = toolCall.file_search.query;
+							}
+
+							await firestore.collection("tool_logs").add(toolLogEntry);
+							console.log(
+								`🔧 Logged tool call: ${toolCall.type} - ${toolCall.id}`
+							);
+						}
+					}
+
+					// Log tool responses
+					if (message.tool_responses && Array.isArray(message.tool_responses)) {
+						for (const toolResponse of message.tool_responses) {
+							const responseLogEntry = {
+								timestamp: new Date().toISOString(),
+								type: "tool_response",
+								messageId: message.id,
+								toolCallId: toolResponse.tool_call_id,
+								toolType: toolResponse.type,
+								threadId: data.threadId || "unknown",
+								path: data.path || "unknown",
+							};
+
+							if (
+								toolResponse.type === "code_interpreter" &&
+								toolResponse.code_interpreter &&
+								toolResponse.code_interpreter.outputs
+							) {
+								responseLogEntry.outputs =
+									toolResponse.code_interpreter.outputs.map((output) => ({
+										type: output.type,
+										content:
+											output.type === "logs"
+												? output.logs
+												: output.type === "image"
+												? `[Image: ${output.image.file_id}]`
+												: output.type === "error"
+												? output.error
+												: null,
+									}));
+							} else if (
+								toolResponse.type === "function" &&
+								toolResponse.function
+							) {
+								responseLogEntry.functionName = toolResponse.function.name;
+								responseLogEntry.functionOutput = toolResponse.function.output;
+							} else if (
+								toolResponse.type === "file_search" &&
+								toolResponse.file_search
+							) {
+								responseLogEntry.fileCount = toolResponse.file_search.results
+									? toolResponse.file_search.results.length
+									: 0;
+							}
+
+							await firestore.collection("tool_logs").add(responseLogEntry);
+							console.log(
+								`📤 Logged tool response: ${toolResponse.type} - ${toolResponse.tool_call_id}`
+							);
+						}
+					}
+				}
+			}
+		}
+	} catch (err) {
+		console.error("❌ Tool logging error:", err);
+	}
+}
+
 // Data logging functions
 async function logInteraction(data) {
 	try {
@@ -145,6 +251,66 @@ module.exports = async (req, res) => {
 
 			try {
 				const data = JSON.parse(text);
+
+				// Enhanced logging for tool calls and responses
+				if (data.data && Array.isArray(data.data)) {
+					data.data.forEach((message, index) => {
+						if (message.role === "assistant") {
+							console.log(`🔍 Assistant message ${index + 1}:`, {
+								hasToolCalls: !!message.tool_calls,
+								hasToolResponses: !!message.tool_responses,
+								toolCallsCount: message.tool_calls
+									? message.tool_calls.length
+									: 0,
+								toolResponsesCount: message.tool_responses
+									? message.tool_responses.length
+									: 0,
+								contentTypes: message.content
+									? message.content.map((c) => c.type)
+									: [],
+							});
+
+							// Log tool calls if present
+							if (message.tool_calls && Array.isArray(message.tool_calls)) {
+								message.tool_calls.forEach((toolCall, toolIndex) => {
+									console.log(`🔧 Tool Call ${toolIndex + 1}:`, {
+										type: toolCall.type,
+										id: toolCall.id,
+										hasCodeInput:
+											toolCall.code_interpreter &&
+											!!toolCall.code_interpreter.input,
+										codeInput: toolCall.code_interpreter
+											? toolCall.code_interpreter.input.substring(0, 200) +
+											  "..."
+											: null,
+									});
+								});
+							}
+
+							// Log tool responses if present
+							if (
+								message.tool_responses &&
+								Array.isArray(message.tool_responses)
+							) {
+								message.tool_responses.forEach((toolResponse, toolIndex) => {
+									console.log(`📤 Tool Response ${toolIndex + 1}:`, {
+										type: toolResponse.type,
+										toolCallId: toolResponse.tool_call_id,
+										hasOutputs:
+											toolResponse.code_interpreter &&
+											!!toolResponse.code_interpreter.outputs,
+										outputCount: toolResponse.code_interpreter
+											? toolResponse.code_interpreter.outputs.length
+											: 0,
+									});
+								});
+							}
+						}
+					});
+				}
+
+				// Log tool interactions to separate collection
+				await logToolInteractions(data);
 
 				// Log the response to Firestore
 				await logToFirestore({
