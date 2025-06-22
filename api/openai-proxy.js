@@ -154,6 +154,154 @@ async function logToolInteractions(data) {
 	}
 }
 
+// Function to fetch and log run steps (code interpreter inputs/outputs)
+async function logRunSteps(threadId, runId) {
+	try {
+		if (!firestore) {
+			console.log("⚠️ Firestore not initialized, skipping run steps logging");
+			return;
+		}
+
+		console.log(`🔍 Fetching run steps for thread: ${threadId}, run: ${runId}`);
+
+		// Fetch run steps from OpenAI API
+		const response = await fetch(
+			`https://api.openai.com/v1/threads/${threadId}/runs/${runId}/steps`,
+			{
+				method: "GET",
+				headers: {
+					Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+					"Content-Type": "application/json",
+					"OpenAI-Beta": "assistants=v2",
+				},
+			}
+		);
+
+		if (!response.ok) {
+			console.error(
+				`❌ Failed to fetch run steps: ${response.status} ${response.statusText}`
+			);
+			return;
+		}
+
+		const stepsData = await response.json();
+		console.log(`📊 Found ${stepsData.data?.length || 0} run steps`);
+
+		// Log each step that contains tool calls
+		if (stepsData.data && Array.isArray(stepsData.data)) {
+			for (const step of stepsData.data) {
+				if (step.step_details && step.step_details.type === "tool_calls") {
+					console.log(`🔧 Processing step: ${step.id} (${step.status})`);
+
+					if (
+						step.step_details.tool_calls &&
+						Array.isArray(step.step_details.tool_calls)
+					) {
+						for (const toolCall of step.step_details.tool_calls) {
+							const stepLogEntry = {
+								timestamp: new Date().toISOString(),
+								type: "run_step_tool_call",
+								stepId: step.id,
+								runId: runId,
+								threadId: threadId,
+								toolCallId: toolCall.id,
+								toolType: toolCall.type,
+								stepStatus: step.status,
+								stepCreatedAt: step.created_at,
+								stepCompletedAt: step.completed_at,
+							};
+
+							// Handle code interpreter tool calls
+							if (
+								toolCall.type === "code_interpreter" &&
+								toolCall.code_interpreter
+							) {
+								stepLogEntry.codeInput = toolCall.code_interpreter.input;
+								stepLogEntry.language = "python";
+
+								// Log code outputs if available
+								if (
+									toolCall.code_interpreter.outputs &&
+									Array.isArray(toolCall.code_interpreter.outputs)
+								) {
+									stepLogEntry.codeOutputs =
+										toolCall.code_interpreter.outputs.map((output) => ({
+											type: output.type,
+											content:
+												output.type === "logs"
+													? output.logs
+													: output.type === "image"
+													? `[Image: ${output.image.file_id}]`
+													: output.type === "error"
+													? output.error
+													: null,
+										}));
+								}
+							} else if (toolCall.type === "code" && toolCall.code) {
+								// Fallback for the "code" type (newer API version)
+								stepLogEntry.codeInput = toolCall.code.input;
+								stepLogEntry.language = "python";
+
+								// Log code outputs if available
+								if (
+									toolCall.code.outputs &&
+									Array.isArray(toolCall.code.outputs)
+								) {
+									stepLogEntry.codeOutputs = toolCall.code.outputs.map(
+										(output) => ({
+											type: output.type,
+											content:
+												output.type === "logs"
+													? output.logs
+													: output.type === "image"
+													? `[Image: ${output.image.file_id}]`
+													: output.type === "error"
+													? output.error
+													: null,
+										})
+									);
+								}
+							} else if (toolCall.type === "function" && toolCall.function) {
+								stepLogEntry.functionName = toolCall.function.name;
+								stepLogEntry.functionArgs = toolCall.function.arguments;
+								stepLogEntry.functionOutput = toolCall.function.output;
+							} else if (
+								toolCall.type === "file_search" &&
+								toolCall.file_search
+							) {
+								stepLogEntry.searchQuery = toolCall.file_search.query;
+								stepLogEntry.searchResults = toolCall.file_search.results;
+							}
+
+							// Add debug logging to see what we're actually getting
+							console.log(`🔍 Tool call details:`, {
+								type: toolCall.type,
+								id: toolCall.id,
+								hasCodeInterpreter: !!toolCall.code_interpreter,
+								hasCode: !!toolCall.code,
+								codeInput:
+									toolCall.code_interpreter?.input || toolCall.code?.input,
+								outputsCount:
+									toolCall.code_interpreter?.outputs?.length ||
+									toolCall.code?.outputs?.length,
+							});
+
+							await firestore.collection("run_steps").add(stepLogEntry);
+							console.log(
+								`📝 Logged run step tool call: ${toolCall.type} - ${toolCall.id}`
+							);
+						}
+					}
+				}
+			}
+		}
+
+		console.log(`✅ Successfully logged run steps for run: ${runId}`);
+	} catch (err) {
+		console.error("❌ Run steps logging error:", err);
+	}
+}
+
 // Data logging functions
 async function logInteraction(data) {
 	try {
@@ -311,6 +459,35 @@ module.exports = async (req, res) => {
 
 				// Log tool interactions to separate collection
 				await logToolInteractions(data);
+
+				// Check if this is a run status response and if the run is completed
+				if (
+					path.includes("/runs/") &&
+					path.endsWith("/runs") === false &&
+					data.status === "completed"
+				) {
+					// Extract thread ID and run ID from the path
+					const pathParts = path.split("/");
+					const threadIdIndex = pathParts.indexOf("threads") + 1;
+					const runIdIndex = pathParts.indexOf("runs") + 1;
+
+					if (
+						threadIdIndex < pathParts.length &&
+						runIdIndex < pathParts.length
+					) {
+						const threadId = pathParts[threadIdIndex];
+						const runId = pathParts[runIdIndex];
+
+						console.log(
+							`🎯 Run completed detected: thread=${threadId}, run=${runId}`
+						);
+
+						// Fetch and log run steps asynchronously (don't wait for it to complete)
+						logRunSteps(threadId, runId).catch((err) => {
+							console.error("❌ Error logging run steps:", err);
+						});
+					}
+				}
 
 				// Log the response to Firestore
 				await logToFirestore({
