@@ -476,25 +476,64 @@ module.exports = async (req, res) => {
 					const buffer = await openaiRes.arrayBuffer();
 					console.log("📁 File content received, size:", buffer.byteLength);
 
-					// Log the request to Firestore
-					await logToFirestore({
-						type: "file_content_request",
-						path,
-						method,
-						status: openaiRes.status,
-						responseTime,
-						responseSize: buffer.byteLength,
-						contentType: openaiRes.headers.get("content-type"),
-					});
-
-					// Set appropriate headers for binary response
+					// Extract file ID from path
+					const fileId = path.split("/")[2]; // /files/{fileId}/content
 					const contentType =
 						openaiRes.headers.get("content-type") || "application/octet-stream";
-					console.log("📁 Setting content type:", contentType);
 
+					// Convert buffer to base64 for Firestore storage
+					const base64Data = Buffer.from(buffer).toString("base64");
+
+					// Save image to Firestore (in background, don't wait for it)
+					if (firestore) {
+						try {
+							const imageDoc = {
+								fileId: fileId,
+								contentType: contentType,
+								base64Data: base64Data,
+								size: buffer.byteLength,
+								createdAt: new Date().toISOString(),
+								accessedAt: new Date().toISOString(),
+							};
+
+							// Save to Firestore asynchronously (don't wait)
+							firestore
+								.collection("image_files")
+								.doc(fileId)
+								.set(imageDoc)
+								.then(() => {
+									console.log("📁 Image saved to Firestore:", fileId);
+								})
+								.catch((error) => {
+									console.error("❌ Error saving image to Firestore:", error);
+								});
+
+							// Log the request to Firestore
+							logToFirestore({
+								type: "file_content_saved",
+								path,
+								method,
+								status: openaiRes.status,
+								responseTime,
+								responseSize: buffer.byteLength,
+								contentType: contentType,
+								fileId: fileId,
+								firestorePath: `image_files/${fileId}`,
+							}).catch((error) => {
+								console.error("❌ Error logging to Firestore:", error);
+							});
+						} catch (firestoreError) {
+							console.error(
+								"❌ Error preparing Firestore save:",
+								firestoreError
+							);
+						}
+					}
+
+					// Always return binary data
+					console.log("📁 Returning binary data directly");
 					res.setHeader("Content-Type", contentType);
 					res.setHeader("Content-Length", buffer.byteLength);
-
 					return res.status(openaiRes.status).send(Buffer.from(buffer));
 				} catch (fileError) {
 					console.error("❌ Error handling file content request:", fileError);

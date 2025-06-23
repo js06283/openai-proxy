@@ -30,6 +30,10 @@
 		{
 			"src": "/thread-viewer",
 			"dest": "thread-viewer.html"
+		},
+		{
+			"src": "/images/(.*)",
+			"dest": "api/openai-proxy.js"
 		}
 	]
 }

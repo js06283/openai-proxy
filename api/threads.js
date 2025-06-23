@@ -141,14 +141,38 @@ function extractMessagesFromLog(log) {
 																messageType: "tool_response",
 															});
 														} else if (output.type === "image") {
+															const imageId = output.image.file_id;
+															// Extract the actual file ID from the image reference
+															const actualFileId = imageId
+																.replace(/^\[Image:\s*/, "")
+																.replace(/\s*\]$/, "");
+															const imageInfo = imageFiles[actualFileId];
+															console.log(
+																`🖼️ Processing image output: ${imageId} -> ${actualFileId}`,
+																{
+																	hasImageInfo: !!imageInfo,
+																	hasBase64Data: !!(
+																		imageInfo && imageInfo.base64Data
+																	),
+																	dataLength: imageInfo?.base64Data?.length,
+																}
+															);
+
 															messages.push({
 																role: "assistant",
-																content: `[Generated Image: ${output.image.file_id}]`,
+																content: `[Generated Image: ${imageId}]`,
 																timestamp: log.timestamp,
 																responseTime: log.responseTime || null,
 																contentType: "code_output",
 																outputType: "image",
-																imageId: output.image.file_id,
+																imageId: imageId,
+																imageData: imageInfo
+																	? {
+																			contentType: imageInfo.contentType,
+																			base64Data: imageInfo.base64Data,
+																			size: imageInfo.size,
+																	  }
+																	: null,
 																toolCallId: toolResponse.tool_call_id,
 																messageType: "tool_response",
 															});
@@ -242,16 +266,40 @@ function extractMessagesFromLog(log) {
 																messageType: "legacy_content",
 															});
 														} else if (output.type === "image") {
+															const imageId = output.image.file_id;
+															// Extract the actual file ID from the image reference
+															const actualFileId = imageId
+																.replace(/^\[Image:\s*/, "")
+																.replace(/\s*\]$/, "");
+															const imageInfo = imageFiles[actualFileId];
+															console.log(
+																`🖼️ Processing image output: ${imageId} -> ${actualFileId}`,
+																{
+																	hasImageInfo: !!imageInfo,
+																	hasBase64Data: !!(
+																		imageInfo && imageInfo.base64Data
+																	),
+																	dataLength: imageInfo?.base64Data?.length,
+																}
+															);
+
 															messages.push({
 																role: "assistant",
-																content: `[Generated Image: ${output.image.file_id}]`,
+																content: `[Generated Image: ${imageId}]`,
 																timestamp: log.timestamp,
 																responseTime: log.responseTime || null,
 																contentType: "code_output",
 																outputType: "image",
-																imageId: output.image.file_id,
-																legacy: true,
-																messageType: "legacy_content",
+																imageId: imageId,
+																imageData: imageInfo
+																	? {
+																			contentType: imageInfo.contentType,
+																			base64Data: imageInfo.base64Data,
+																			size: imageInfo.size,
+																	  }
+																	: null,
+																toolCallId: toolResponse.tool_call_id,
+																messageType: "tool_response",
 															});
 														} else if (output.type === "error") {
 															messages.push({
@@ -458,6 +506,30 @@ module.exports = async (req, res) => {
 			});
 		}
 
+		console.log(`📊 Found ${Object.keys(runSteps).length} run steps`);
+
+		// Fetch all image files for inclusion in thread data
+		const imageFilesSnapshot = await firestore.collection("image_files").get();
+		const imageFiles = {};
+
+		if (!imageFilesSnapshot.empty) {
+			imageFilesSnapshot.docs.forEach((doc) => {
+				const data = doc.data();
+				imageFiles[data.fileId] = {
+					fileId: data.fileId,
+					contentType: data.contentType,
+					base64Data: data.base64Data,
+					size: data.size,
+					createdAt: data.createdAt,
+					accessedAt: data.accessedAt,
+				};
+			});
+		}
+
+		console.log(
+			`📊 Found ${Object.keys(imageFiles).length} image files in database`
+		);
+
 		// Filter and group by thread
 		const allInteractions = snapshot.docs.map((doc) => {
 			const data = doc.data();
@@ -597,12 +669,35 @@ module.exports = async (req, res) => {
 								runId: step.runId,
 							});
 						} else if (output.type === "image") {
+							const imageId = output.content;
+							// Extract the actual file ID from the image reference
+							const actualFileId = imageId
+								.replace(/^\[Image:\s*/, "")
+								.replace(/\s*\]$/, "");
+							const imageInfo = imageFiles[actualFileId];
+							console.log(
+								`🖼️ Processing image output: ${imageId} -> ${actualFileId}`,
+								{
+									hasImageInfo: !!imageInfo,
+									hasBase64Data: !!(imageInfo && imageInfo.base64Data),
+									dataLength: imageInfo?.base64Data?.length,
+								}
+							);
+
 							threads[threadId].push({
 								role: "assistant",
-								content: `[Generated Image: ${output.content}]`,
+								content: `[Generated Image: ${imageId}]`,
 								timestamp: step.timestamp,
 								contentType: "code_output",
 								outputType: "image",
+								imageId: imageId,
+								imageData: imageInfo
+									? {
+											contentType: imageInfo.contentType,
+											base64Data: imageInfo.base64Data,
+											size: imageInfo.size,
+									  }
+									: null,
 								toolCallId: step.toolCallId,
 								messageType: "run_step",
 								stepId: step.stepId,
