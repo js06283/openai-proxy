@@ -8,9 +8,17 @@
 		{
 			"src": "api/threads.js",
 			"use": "@vercel/node"
+		},
+		{
+			"src": "thread-viewer.html",
+			"use": "@vercel/static"
 		}
 	],
 	"routes": [
+		{
+			"src": "/",
+			"dest": "thread-viewer.html"
+		},
 		{
 			"src": "/openai-proxy",
 			"dest": "api/openai-proxy.js"
@@ -18,6 +26,10 @@
 		{
 			"src": "/api/threads",
 			"dest": "api/threads.js"
+		},
+		{
+			"src": "/thread-viewer",
+			"dest": "thread-viewer.html"
 		}
 	]
 }

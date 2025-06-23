@@ -172,18 +172,39 @@ function isAssistantResponse(log) {
 // API endpoint for threads
 app.get("/api/threads", async (req, res) => {
 	try {
-		// Initialize Firestore
+		// Initialize Firestore with local credentials file
 		let firestore;
-		if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-			const credentials = JSON.parse(
-				process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON
+		try {
+			const credentialsPath = path.join(
+				__dirname,
+				"income-chatbot-068d445abfed.json"
 			);
 			firestore = new Firestore({
-				projectId: credentials.project_id,
-				credentials: credentials,
+				projectId: "income-chatbot",
+				keyFilename: credentialsPath,
 			});
-		} else {
-			firestore = new Firestore();
+			console.log("✅ Firestore initialized with local credentials");
+		} catch (err) {
+			console.error(
+				"❌ Failed to initialize Firestore with local credentials:",
+				err
+			);
+			// Fallback to environment variable if available
+			if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+				const credentials = JSON.parse(
+					process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON
+				);
+				firestore = new Firestore({
+					projectId: credentials.project_id,
+					credentials: credentials,
+				});
+				console.log("✅ Firestore initialized with environment credentials");
+			} else {
+				console.error("❌ No credentials available for Firestore");
+				return res
+					.status(500)
+					.json({ error: "Firestore credentials not available" });
+			}
 		}
 
 		// Fetch all logs
@@ -366,6 +387,271 @@ app.get("/api/threads", async (req, res) => {
 		res
 			.status(500)
 			.json({ error: "Failed to fetch threads", details: err.message });
+	}
+});
+
+// New API endpoint for run steps
+app.get("/api/run-steps", async (req, res) => {
+	try {
+		// Initialize Firestore with local credentials file
+		let firestore;
+		try {
+			const credentialsPath = path.join(
+				__dirname,
+				"income-chatbot-068d445abfed.json"
+			);
+			firestore = new Firestore({
+				projectId: "income-chatbot",
+				keyFilename: credentialsPath,
+			});
+			console.log("✅ Firestore initialized with local credentials");
+		} catch (err) {
+			console.error(
+				"❌ Failed to initialize Firestore with local credentials:",
+				err
+			);
+			// Fallback to environment variable if available
+			if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+				const credentials = JSON.parse(
+					process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON
+				);
+				firestore = new Firestore({
+					projectId: credentials.project_id,
+					credentials: credentials,
+				});
+				console.log("✅ Firestore initialized with environment credentials");
+			} else {
+				console.error("❌ No credentials available for Firestore");
+				return res
+					.status(500)
+					.json({ error: "Firestore credentials not available" });
+			}
+		}
+
+		// Fetch all run steps
+		const snapshot = await firestore.collection("run_steps").get();
+		if (snapshot.empty) {
+			return res.json({ runSteps: [] });
+		}
+
+		const runSteps = snapshot.docs.map((doc) => {
+			const data = doc.data();
+			return {
+				id: doc.id,
+				timestamp: data.timestamp || "",
+				type: data.type || "",
+				stepId: data.stepId || "",
+				runId: data.runId || "",
+				threadId: data.threadId || "",
+				toolCallId: data.toolCallId || "",
+				toolType: data.toolType || "",
+				stepStatus: data.stepStatus || "",
+				stepCreatedAt: data.stepCreatedAt || "",
+				stepCompletedAt: data.stepCompletedAt || "",
+				codeInput: data.codeInput || "",
+				language: data.language || "",
+				codeOutputs: data.codeOutputs || [],
+				functionName: data.functionName || "",
+				functionArgs: data.functionArgs || "",
+				functionOutput: data.functionOutput || "",
+				searchQuery: data.searchQuery || "",
+				searchResults: data.searchResults || [],
+			};
+		});
+
+		console.log(`📊 Found ${runSteps.length} run steps`);
+
+		// Group run steps by thread
+		const runStepsByThread = {};
+		runSteps.forEach((step) => {
+			if (!runStepsByThread[step.threadId]) {
+				runStepsByThread[step.threadId] = [];
+			}
+			runStepsByThread[step.threadId].push(step);
+		});
+
+		// Sort run steps by timestamp within each thread
+		Object.keys(runStepsByThread).forEach((threadId) => {
+			runStepsByThread[threadId].sort(
+				(a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+			);
+		});
+
+		res.json({ runSteps: runStepsByThread });
+	} catch (err) {
+		console.error("❌ Error fetching run steps:", err);
+		res
+			.status(500)
+			.json({ error: "Failed to fetch run steps", details: err.message });
+	}
+});
+
+// Enhanced API endpoint that combines threads and run steps
+app.get("/api/threads-with-steps", async (req, res) => {
+	try {
+		// Initialize Firestore with local credentials file
+		let firestore;
+		try {
+			const credentialsPath = path.join(
+				__dirname,
+				"income-chatbot-068d445abfed.json"
+			);
+			firestore = new Firestore({
+				projectId: "income-chatbot",
+				keyFilename: credentialsPath,
+			});
+			console.log("✅ Firestore initialized with local credentials");
+		} catch (err) {
+			console.error(
+				"❌ Failed to initialize Firestore with local credentials:",
+				err
+			);
+			// Fallback to environment variable if available
+			if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+				const credentials = JSON.parse(
+					process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON
+				);
+				firestore = new Firestore({
+					projectId: credentials.project_id,
+					credentials: credentials,
+				});
+				console.log("✅ Firestore initialized with environment credentials");
+			} else {
+				console.error("❌ No credentials available for Firestore");
+				return res
+					.status(500)
+					.json({ error: "Firestore credentials not available" });
+			}
+		}
+
+		// Fetch both threads and run steps
+		const [threadsSnapshot, runStepsSnapshot] = await Promise.all([
+			firestore.collection("api_logs").get(),
+			firestore.collection("run_steps").get(),
+		]);
+
+		// Process threads (existing logic)
+		const allInteractions = threadsSnapshot.docs.map((doc) => {
+			const data = doc.data();
+			return {
+				id: doc.id,
+				timestamp: data.timestamp || "",
+				type: data.type || "",
+				path: data.path || "",
+				method: data.method || "",
+				body: data.body || "",
+				responseData: data.responseData || "",
+				responseTime: data.responseTime || null,
+			};
+		});
+
+		const threads = {};
+		let systemPrompts = {};
+
+		// Process thread interactions
+		allInteractions.forEach((log) => {
+			if (!log.path || !log.path.includes("/threads/")) return;
+
+			const threadMatch = log.path.match(/\/threads\/([^\/]+)/);
+			const threadId = threadMatch ? threadMatch[1] : null;
+			if (!threadId) return;
+
+			const extractedMessages = extractMessagesFromLog(log);
+			const isUser = isUserSentMessage(log);
+			const isAssistant = isAssistantResponse(log);
+
+			// Detect system prompt
+			if (
+				log.body &&
+				log.method === "POST" &&
+				log.path.includes("/messages") &&
+				log.type === "request"
+			) {
+				try {
+					const bodyData = JSON.parse(log.body);
+					if (bodyData.role === "system" && bodyData.content) {
+						systemPrompts[threadId] = bodyData.content;
+					}
+				} catch (e) {}
+			}
+
+			if (extractedMessages.length > 0) {
+				if (!threads[threadId]) threads[threadId] = [];
+				for (const messageObj of extractedMessages) {
+					threads[threadId].push(messageObj);
+				}
+			}
+		});
+
+		// Process run steps
+		const runSteps = runStepsSnapshot.docs.map((doc) => {
+			const data = doc.data();
+			return {
+				id: doc.id,
+				timestamp: data.timestamp || "",
+				type: data.type || "",
+				stepId: data.stepId || "",
+				runId: data.runId || "",
+				threadId: data.threadId || "",
+				toolCallId: data.toolCallId || "",
+				toolType: data.toolType || "",
+				stepStatus: data.stepStatus || "",
+				stepCreatedAt: data.stepCreatedAt || "",
+				stepCompletedAt: data.stepCompletedAt || "",
+				codeInput: data.codeInput || "",
+				language: data.language || "",
+				codeOutputs: data.codeOutputs || [],
+				functionName: data.functionName || "",
+				functionArgs: data.functionArgs || "",
+				functionOutput: data.functionOutput || "",
+				searchQuery: data.searchQuery || "",
+				searchResults: data.searchResults || [],
+			};
+		});
+
+		// Group run steps by thread
+		const runStepsByThread = {};
+		runSteps.forEach((step) => {
+			if (!runStepsByThread[step.threadId]) {
+				runStepsByThread[step.threadId] = [];
+			}
+			runStepsByThread[step.threadId].push(step);
+		});
+
+		// Combine threads with their run steps
+		const threadList = Object.keys(threads).map((threadId) => {
+			const threadMessages = threads[threadId].sort(
+				(a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+			);
+
+			// Get run steps for this thread
+			const threadRunSteps = runStepsByThread[threadId] || [];
+			threadRunSteps.sort(
+				(a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+			);
+
+			return {
+				threadId,
+				messages: threadMessages,
+				systemPrompt: systemPrompts[threadId] || null,
+				runSteps: threadRunSteps,
+			};
+		});
+
+		// Sort threads by most recent message
+		threadList.sort((a, b) => {
+			const lastA = a.messages[a.messages.length - 1]?.timestamp || 0;
+			const lastB = b.messages[b.messages.length - 1]?.timestamp || 0;
+			return new Date(lastB) - new Date(lastA);
+		});
+
+		res.json({ threads: threadList });
+	} catch (err) {
+		console.error("❌ Error fetching threads with steps:", err);
+		res.status(500).json({
+			error: "Failed to fetch threads with steps",
+			details: err.message,
+		});
 	}
 });
 

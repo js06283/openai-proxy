@@ -189,7 +189,16 @@ async function logRunSteps(threadId, runId) {
 
 		// Log each step that contains tool calls
 		if (stepsData.data && Array.isArray(stepsData.data)) {
+			console.log(`🔍 Processing ${stepsData.data.length} run steps`);
+
 			for (const step of stepsData.data) {
+				console.log(`🔍 Step ${step.id}:`, {
+					type: step.step_details?.type,
+					status: step.status,
+					hasToolCalls: !!step.step_details?.tool_calls,
+					toolCallsCount: step.step_details?.tool_calls?.length || 0,
+				});
+
 				if (step.step_details && step.step_details.type === "tool_calls") {
 					console.log(`🔧 Processing step: ${step.id} (${step.status})`);
 
@@ -197,7 +206,23 @@ async function logRunSteps(threadId, runId) {
 						step.step_details.tool_calls &&
 						Array.isArray(step.step_details.tool_calls)
 					) {
+						console.log(
+							`🔧 Found ${step.step_details.tool_calls.length} tool calls in step ${step.id}`
+						);
+
 						for (const toolCall of step.step_details.tool_calls) {
+							console.log(`🔧 Processing tool call:`, {
+								id: toolCall.id,
+								type: toolCall.type,
+								hasCodeInterpreter: !!toolCall.code_interpreter,
+								hasCode: !!toolCall.code,
+								codeInput:
+									toolCall.code_interpreter?.input || toolCall.code?.input,
+								outputsCount:
+									toolCall.code_interpreter?.outputs?.length ||
+									toolCall.code?.outputs?.length,
+							});
+
 							const stepLogEntry = {
 								timestamp: new Date().toISOString(),
 								type: "run_step_tool_call",
@@ -216,6 +241,16 @@ async function logRunSteps(threadId, runId) {
 								toolCall.type === "code_interpreter" &&
 								toolCall.code_interpreter
 							) {
+								console.log(`🔧 Processing code_interpreter tool call:`, {
+									hasInput: !!toolCall.code_interpreter.input,
+									inputPreview: toolCall.code_interpreter.input?.substring(
+										0,
+										100
+									),
+									hasOutputs: !!toolCall.code_interpreter.outputs,
+									outputsCount: toolCall.code_interpreter.outputs?.length || 0,
+								});
+
 								stepLogEntry.codeInput = toolCall.code_interpreter.input;
 								stepLogEntry.language = "python";
 
@@ -224,20 +259,42 @@ async function logRunSteps(threadId, runId) {
 									toolCall.code_interpreter.outputs &&
 									Array.isArray(toolCall.code_interpreter.outputs)
 								) {
+									console.log(
+										`📤 Processing ${toolCall.code_interpreter.outputs.length} code outputs`
+									);
 									stepLogEntry.codeOutputs =
-										toolCall.code_interpreter.outputs.map((output) => ({
-											type: output.type,
-											content:
-												output.type === "logs"
-													? output.logs
-													: output.type === "image"
-													? `[Image: ${output.image.file_id}]`
-													: output.type === "error"
-													? output.error
-													: null,
-										}));
+										toolCall.code_interpreter.outputs.map((output) => {
+											console.log(`📤 Output:`, {
+												type: output.type,
+												hasLogs: !!output.logs,
+												hasImage: !!output.image,
+												hasError: !!output.error,
+												content:
+													output.type === "logs"
+														? output.logs?.substring(0, 100)
+														: null,
+											});
+											return {
+												type: output.type,
+												content:
+													output.type === "logs"
+														? output.logs
+														: output.type === "image"
+														? `[Image: ${output.image.file_id}]`
+														: output.type === "error"
+														? output.error
+														: null,
+											};
+										});
 								}
 							} else if (toolCall.type === "code" && toolCall.code) {
+								console.log(`🔧 Processing code tool call:`, {
+									hasInput: !!toolCall.code.input,
+									inputPreview: toolCall.code.input?.substring(0, 100),
+									hasOutputs: !!toolCall.code.outputs,
+									outputsCount: toolCall.code.outputs?.length || 0,
+								});
+
 								// Fallback for the "code" type (newer API version)
 								stepLogEntry.codeInput = toolCall.code.input;
 								stepLogEntry.language = "python";
@@ -247,18 +304,33 @@ async function logRunSteps(threadId, runId) {
 									toolCall.code.outputs &&
 									Array.isArray(toolCall.code.outputs)
 								) {
+									console.log(
+										`📤 Processing ${toolCall.code.outputs.length} code outputs`
+									);
 									stepLogEntry.codeOutputs = toolCall.code.outputs.map(
-										(output) => ({
-											type: output.type,
-											content:
-												output.type === "logs"
-													? output.logs
-													: output.type === "image"
-													? `[Image: ${output.image.file_id}]`
-													: output.type === "error"
-													? output.error
-													: null,
-										})
+										(output) => {
+											console.log(`📤 Output:`, {
+												type: output.type,
+												hasLogs: !!output.logs,
+												hasImage: !!output.image,
+												hasError: !!output.error,
+												content:
+													output.type === "logs"
+														? output.logs?.substring(0, 100)
+														: null,
+											});
+											return {
+												type: output.type,
+												content:
+													output.type === "logs"
+														? output.logs
+														: output.type === "image"
+														? `[Image: ${output.image.file_id}]`
+														: output.type === "error"
+														? output.error
+														: null,
+											};
+										}
 									);
 								}
 							} else if (toolCall.type === "function" && toolCall.function) {
@@ -274,16 +346,12 @@ async function logRunSteps(threadId, runId) {
 							}
 
 							// Add debug logging to see what we're actually getting
-							console.log(`🔍 Tool call details:`, {
-								type: toolCall.type,
-								id: toolCall.id,
-								hasCodeInterpreter: !!toolCall.code_interpreter,
-								hasCode: !!toolCall.code,
-								codeInput:
-									toolCall.code_interpreter?.input || toolCall.code?.input,
-								outputsCount:
-									toolCall.code_interpreter?.outputs?.length ||
-									toolCall.code?.outputs?.length,
+							console.log(`🔍 Final step log entry:`, {
+								type: stepLogEntry.type,
+								toolType: stepLogEntry.toolType,
+								hasCodeInput: !!stepLogEntry.codeInput,
+								hasCodeOutputs: !!stepLogEntry.codeOutputs,
+								codeOutputsCount: stepLogEntry.codeOutputs?.length || 0,
 							});
 
 							await firestore.collection("run_steps").add(stepLogEntry);
@@ -394,8 +462,64 @@ module.exports = async (req, res) => {
 			);
 
 			// ✅ Log full response details
-			const text = await openaiRes.text();
 			const responseTime = Date.now() - startTime;
+
+			// Check if this is a file content request (binary response)
+			if (path.includes("/files/") && path.endsWith("/content")) {
+				console.log("📁 Handling file content request (binary response)");
+				console.log("📁 Request path:", path);
+				console.log("📁 Request method:", method);
+				console.log("📁 Request headers:", headers);
+
+				try {
+					// For file content, return the binary data directly
+					const buffer = await openaiRes.arrayBuffer();
+					console.log("📁 File content received, size:", buffer.byteLength);
+
+					// Log the request to Firestore
+					await logToFirestore({
+						type: "file_content_request",
+						path,
+						method,
+						status: openaiRes.status,
+						responseTime,
+						responseSize: buffer.byteLength,
+						contentType: openaiRes.headers.get("content-type"),
+					});
+
+					// Set appropriate headers for binary response
+					const contentType =
+						openaiRes.headers.get("content-type") || "application/octet-stream";
+					console.log("📁 Setting content type:", contentType);
+
+					res.setHeader("Content-Type", contentType);
+					res.setHeader("Content-Length", buffer.byteLength);
+
+					return res.status(openaiRes.status).send(Buffer.from(buffer));
+				} catch (fileError) {
+					console.error("❌ Error handling file content request:", fileError);
+
+					// Log the error to Firestore
+					await logToFirestore({
+						type: "file_content_error",
+						path,
+						method,
+						status: openaiRes.status,
+						responseTime,
+						error: fileError.message,
+						openaiStatus: openaiRes.status,
+						openaiStatusText: openaiRes.statusText,
+					});
+
+					return res.status(500).json({
+						error: "File content request failed",
+						details: fileError.message,
+						openaiStatus: openaiRes.status,
+					});
+				}
+			}
+
+			const text = await openaiRes.text();
 
 			try {
 				const data = JSON.parse(text);

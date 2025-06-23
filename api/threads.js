@@ -1,6 +1,6 @@
 const { Firestore } = require("@google-cloud/firestore");
 
-// Helper functions (same as in analyze-conversations.js)
+// Helper functions (same as in local-server.js)
 function extractMessagesFromLog(log) {
 	const messages = [];
 	try {
@@ -22,10 +22,24 @@ function extractMessagesFromLog(log) {
 		if (isAssistantResponse(log)) {
 			if (log.responseData) {
 				try {
+					console.log(`🔍 Extracting assistant messages from responseData:`);
+					console.log(`   ResponseData length: ${log.responseData.length}`);
+					console.log(
+						`   ResponseData preview: ${log.responseData.substring(0, 300)}...`
+					);
+
 					const responseData = JSON.parse(log.responseData);
 					if (responseData.data && Array.isArray(responseData.data)) {
+						console.log(
+							`   Found ${responseData.data.length} messages in data array`
+						);
 						for (const message of responseData.data) {
+							console.log(`   Processing message with role: ${message.role}`);
 							if (message.role === "assistant" && message.content) {
+								console.log(
+									`   Found assistant message with ${message.content.length} content items`
+								);
+
 								// Extract text content
 								for (const contentItem of message.content) {
 									if (
@@ -33,6 +47,12 @@ function extractMessagesFromLog(log) {
 										contentItem.text &&
 										contentItem.text.value
 									) {
+										console.log(
+											`   Extracting text content: ${contentItem.text.value.substring(
+												0,
+												50
+											)}...`
+										);
 										messages.push({
 											role: "assistant",
 											content: contentItem.text.value,
@@ -296,14 +316,25 @@ function extractMessagesFromLog(log) {
 						}
 					}
 				} catch (e) {
-					console.log("Error parsing responseData:", e.message);
+					console.log(
+						`❌ Error parsing responseData in extractMessagesFromLog:`,
+						e.message
+					);
+					console.log(`   ResponseData: ${log.responseData}`);
 					// Try to extract assistant content from raw string as fallback
 					if (log.responseData.includes('"role":"assistant"')) {
+						console.log(`   Attempting fallback extraction from raw string...`);
 						// Simple regex to extract text content from assistant messages
 						const assistantMatch = log.responseData.match(
 							/"role":"assistant".*?"text":\s*{\s*"value":\s*"([^"]+)"/
 						);
 						if (assistantMatch) {
+							console.log(
+								`   Fallback extraction successful: ${assistantMatch[1].substring(
+									0,
+									50
+								)}...`
+							);
 							messages.push({
 								role: "assistant",
 								content: assistantMatch[1],
@@ -318,10 +349,11 @@ function extractMessagesFromLog(log) {
 		}
 		return messages;
 	} catch (err) {
-		console.log("Error in extractMessagesFromLog:", err);
+		console.log("Error parsing message content:", err);
 		return [];
 	}
 }
+
 function isUserSentMessage(log) {
 	return (
 		log.method === "POST" &&
@@ -330,6 +362,7 @@ function isUserSentMessage(log) {
 		log.type === "request"
 	);
 }
+
 function isAssistantResponse(log) {
 	// Assistant responses only come from GET requests (fetching messages)
 	// and must contain assistant messages in the response data
@@ -340,16 +373,30 @@ function isAssistantResponse(log) {
 		log.type === "response"
 	) {
 		try {
+			console.log(`🔍 Parsing responseData for ${log.path}:`);
+			console.log(`   ResponseData length: ${log.responseData.length}`);
+			console.log(
+				`   ResponseData preview: ${log.responseData.substring(0, 200)}...`
+			);
+
 			const responseData = JSON.parse(log.responseData);
 			// Check if the response contains assistant messages
 			if (responseData.data && Array.isArray(responseData.data)) {
-				return responseData.data.some(
+				const hasAssistant = responseData.data.some(
 					(message) => message.role === "assistant"
 				);
+				console.log(`   Has assistant messages: ${hasAssistant}`);
+				return hasAssistant;
 			}
 		} catch (e) {
+			console.log(
+				`❌ Error parsing responseData in isAssistantResponse:`,
+				e.message
+			);
+			console.log(`   ResponseData: ${log.responseData}`);
 			// Try to find assistant role without parsing full JSON
 			if (log.responseData.includes('"role":"assistant"')) {
+				console.log(`   Found assistant role in raw string, returning true`);
 				return true;
 			}
 		}
@@ -377,14 +424,38 @@ module.exports = async (req, res) => {
 				projectId: credentials.project_id,
 				credentials: credentials,
 			});
+			console.log("✅ Firestore initialized with environment credentials");
 		} else {
-			firestore = new Firestore();
+			console.error("❌ No credentials available for Firestore");
+			return res
+				.status(500)
+				.json({ error: "Firestore credentials not available" });
 		}
 
 		// Fetch all logs
 		const snapshot = await firestore.collection("api_logs").get();
 		if (snapshot.empty) {
 			return res.status(200).json({ threads: [] });
+		}
+
+		// Fetch all run steps
+		const runStepsSnapshot = await firestore.collection("run_steps").get();
+		const runSteps = {};
+
+		if (!runStepsSnapshot.empty) {
+			runStepsSnapshot.docs.forEach((doc) => {
+				const data = doc.data();
+				const threadId = data.threadId;
+				if (!runSteps[threadId]) {
+					runSteps[threadId] = [];
+				}
+				runSteps[threadId].push({
+					id: doc.id,
+					...data,
+					timestamp:
+						data.timestamp || data.stepCreatedAt || new Date().toISOString(),
+				});
+			});
 		}
 
 		// Filter and group by thread
@@ -402,17 +473,55 @@ module.exports = async (req, res) => {
 			};
 		});
 
+		console.log(`📊 Found ${allInteractions.length} total interactions`);
+		console.log(
+			`📊 Thread-related interactions: ${
+				allInteractions.filter(
+					(log) => log.path && log.path.includes("/threads/")
+				).length
+			}`
+		);
+
 		const threads = {};
+		let userMessageCount = 0;
+		let assistantMessageCount = 0;
 		let systemPrompts = {};
 
-		allInteractions.forEach((log) => {
-			if (!log.path || !log.path.includes("/threads/")) return;
+		console.log("\n🔍 PROCESSING EACH LOG:");
+		allInteractions.forEach((log, index) => {
+			if (!log.path || !log.path.includes("/threads/")) {
+				console.log(`⏭️  Skipping ${index + 1}: Not a thread-related path`);
+				return;
+			}
+
 			// Extract threadId
 			const threadMatch = log.path.match(/\/threads\/([^\/]+)/);
 			const threadId = threadMatch ? threadMatch[1] : null;
-			if (!threadId) return;
+			if (!threadId) {
+				console.log(`⏭️  Skipping ${index + 1}: No thread ID found in path`);
+				return;
+			}
+
+			console.log(`\n📝 Processing log ${index + 1} for thread ${threadId}:`);
+			console.log(
+				`   Method: ${log.method}, Path: ${log.path}, Type: ${log.type}`
+			);
+
 			// Only keep user/assistant messages
-			const messages = extractMessagesFromLog(log);
+			const extractedMessages = extractMessagesFromLog(log);
+			const isUser = isUserSentMessage(log);
+			const isAssistant = isAssistantResponse(log);
+
+			console.log(`   Is user message: ${isUser}`);
+			console.log(`   Is assistant response: ${isAssistant}`);
+			console.log(`   Extracted ${extractedMessages.length} messages:`);
+			extractedMessages.forEach((msg, msgIndex) => {
+				console.log(
+					`     ${msgIndex + 1}. Role: ${
+						msg.role
+					}, Content: ${msg.content.substring(0, 50)}...`
+				);
+			});
 
 			// Detect system prompt (if present as a system message in body)
 			if (
@@ -425,16 +534,132 @@ module.exports = async (req, res) => {
 					const bodyData = JSON.parse(log.body);
 					if (bodyData.role === "system" && bodyData.content) {
 						systemPrompts[threadId] = bodyData.content;
+						console.log(
+							`   🎯 Found system prompt: ${bodyData.content.substring(
+								0,
+								50
+							)}...`
+						);
 					}
 				} catch (e) {}
 			}
 
-			if (messages.length === 0) return;
-			if (!threads[threadId]) threads[threadId] = [];
-			messages.forEach((message) => {
-				threads[threadId].push(message);
+			if (extractedMessages.length > 0) {
+				if (!threads[threadId]) threads[threadId] = [];
+				console.log(
+					`   ✅ Adding ${extractedMessages.length} messages to thread ${threadId}`
+				);
+				for (const messageObj of extractedMessages) {
+					threads[threadId].push(messageObj);
+					if (messageObj.role === "user") userMessageCount++;
+					if (messageObj.role === "assistant") assistantMessageCount++;
+				}
+			} else {
+				console.log(`   ❌ No messages extracted from this log`);
+			}
+		});
+
+		// Add run steps to threads
+		Object.keys(runSteps).forEach((threadId) => {
+			if (!threads[threadId]) {
+				threads[threadId] = [];
+			}
+
+			runSteps[threadId].forEach((step) => {
+				// Add code inputs as assistant messages
+				if (step.codeInput) {
+					threads[threadId].push({
+						role: "assistant",
+						content: step.codeInput,
+						timestamp: step.timestamp,
+						contentType: "code_input",
+						language: step.language || "python",
+						toolCallId: step.toolCallId,
+						messageType: "run_step",
+						stepId: step.stepId,
+						runId: step.runId,
+					});
+				}
+
+				// Add code outputs as assistant messages
+				if (step.codeOutputs && Array.isArray(step.codeOutputs)) {
+					step.codeOutputs.forEach((output) => {
+						if (output.type === "logs" && output.content) {
+							threads[threadId].push({
+								role: "assistant",
+								content: output.content,
+								timestamp: step.timestamp,
+								contentType: "code_output",
+								outputType: "logs",
+								toolCallId: step.toolCallId,
+								messageType: "run_step",
+								stepId: step.stepId,
+								runId: step.runId,
+							});
+						} else if (output.type === "image") {
+							threads[threadId].push({
+								role: "assistant",
+								content: `[Generated Image: ${output.content}]`,
+								timestamp: step.timestamp,
+								contentType: "code_output",
+								outputType: "image",
+								toolCallId: step.toolCallId,
+								messageType: "run_step",
+								stepId: step.stepId,
+								runId: step.runId,
+							});
+						} else if (output.type === "error") {
+							threads[threadId].push({
+								role: "assistant",
+								content: `Error: ${output.content}`,
+								timestamp: step.timestamp,
+								contentType: "code_output",
+								outputType: "error",
+								toolCallId: step.toolCallId,
+								messageType: "run_step",
+								stepId: step.stepId,
+								runId: step.runId,
+							});
+						}
+					});
+				}
+
+				// Add function calls
+				if (step.functionName) {
+					threads[threadId].push({
+						role: "assistant",
+						content: `[Function Call: ${step.functionName}]`,
+						timestamp: step.timestamp,
+						contentType: "function_call",
+						functionName: step.functionName,
+						functionArgs: step.functionArgs,
+						messageType: "run_step",
+						stepId: step.stepId,
+						runId: step.runId,
+					});
+				}
+
+				// Add file search
+				if (step.searchQuery) {
+					threads[threadId].push({
+						role: "assistant",
+						content: `[File Search: ${step.searchQuery}]`,
+						timestamp: step.timestamp,
+						contentType: "file_search",
+						searchQuery: step.searchQuery,
+						searchResults: step.searchResults,
+						messageType: "run_step",
+						stepId: step.stepId,
+						runId: step.runId,
+					});
+				}
 			});
 		});
+
+		console.log(`\n📊 FINAL STATS:`);
+		console.log(`📊 User messages found: ${userMessageCount}`);
+		console.log(`📊 Assistant messages found: ${assistantMessageCount}`);
+		console.log(`📊 Threads with messages: ${Object.keys(threads).length}`);
 
 		// Sort messages in each thread
 		const threadList = Object.keys(threads).map((threadId) => ({
