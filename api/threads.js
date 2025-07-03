@@ -542,6 +542,8 @@ module.exports = async (req, res) => {
 				body: data.body || "",
 				responseData: data.responseData || "",
 				responseTime: data.responseTime || null,
+				qid: data.qid || null,
+				response_id: data.response_id || null,
 			};
 		});
 
@@ -558,6 +560,7 @@ module.exports = async (req, res) => {
 		let userMessageCount = 0;
 		let assistantMessageCount = 0;
 		let systemPrompts = {};
+		let threadMetadata = {}; // Store qid and response_id for each thread
 
 		console.log("\n🔍 PROCESSING EACH LOG:");
 		allInteractions.forEach((log, index) => {
@@ -572,6 +575,22 @@ module.exports = async (req, res) => {
 			if (!threadId) {
 				console.log(`⏭️  Skipping ${index + 1}: No thread ID found in path`);
 				return;
+			}
+
+			// Store qid and response_id for this thread
+			if (!threadMetadata[threadId]) {
+				threadMetadata[threadId] = {
+					qid: null,
+					response_id: null,
+				};
+			}
+
+			// Update metadata if we have qid/response_id in this log
+			if (log.qid && !threadMetadata[threadId].qid) {
+				threadMetadata[threadId].qid = log.qid;
+			}
+			if (log.response_id && !threadMetadata[threadId].response_id) {
+				threadMetadata[threadId].response_id = log.response_id;
 			}
 
 			console.log(`\n📝 Processing log ${index + 1} for thread ${threadId}:`);
@@ -763,6 +782,8 @@ module.exports = async (req, res) => {
 				(a, b) => new Date(a.timestamp) - new Date(b.timestamp)
 			),
 			systemPrompt: systemPrompts[threadId] || null,
+			qid: threadMetadata[threadId]?.qid || null,
+			response_id: threadMetadata[threadId]?.response_id || null,
 		}));
 
 		// Sort threads by most recent message
