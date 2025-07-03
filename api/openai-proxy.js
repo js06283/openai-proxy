@@ -49,7 +49,7 @@ async function logToFirestore(data) {
 }
 
 // Enhanced logging for tool calls and responses
-async function logToolInteractions(data) {
+async function logToolInteractions(data, qid = null, response_id = null) {
 	try {
 		if (!firestore) {
 			console.log("⚠️ Firestore not initialized, skipping tool logging");
@@ -70,6 +70,8 @@ async function logToolInteractions(data) {
 								toolType: toolCall.type,
 								threadId: data.threadId || "unknown",
 								path: data.path || "unknown",
+								qid: qid,
+								response_id: response_id,
 							};
 
 							if (
@@ -106,6 +108,8 @@ async function logToolInteractions(data) {
 								toolType: toolResponse.type,
 								threadId: data.threadId || "unknown",
 								path: data.path || "unknown",
+								qid: qid,
+								response_id: response_id,
 							};
 
 							if (
@@ -155,7 +159,7 @@ async function logToolInteractions(data) {
 }
 
 // Function to fetch and log run steps (code interpreter inputs/outputs)
-async function logRunSteps(threadId, runId) {
+async function logRunSteps(threadId, runId, qid = null, response_id = null) {
 	try {
 		if (!firestore) {
 			console.log("⚠️ Firestore not initialized, skipping run steps logging");
@@ -234,6 +238,8 @@ async function logRunSteps(threadId, runId) {
 								stepStatus: step.status,
 								stepCreatedAt: step.created_at,
 								stepCompletedAt: step.completed_at,
+								qid: qid,
+								response_id: response_id,
 							};
 
 							// Handle code interpreter tool calls
@@ -427,7 +433,13 @@ module.exports = async (req, res) => {
 				return res.status(400).json({ error: "Empty request body" });
 			}
 
-			const { path, method = "POST", body } = JSON.parse(bodyData);
+			const {
+				path,
+				method = "POST",
+				body,
+				qid,
+				response_id,
+			} = JSON.parse(bodyData);
 			const startTime = Date.now();
 
 			const url = `https://api.openai.com/v1${path}`;
@@ -454,6 +466,8 @@ module.exports = async (req, res) => {
 				body: body ? JSON.stringify(body).substring(0, 1000) : null, // Truncate large bodies
 				userAgent: req.headers["user-agent"],
 				ip: req.headers["x-forwarded-for"] || req.connection.remoteAddress,
+				qid: qid || null,
+				response_id: response_id || null,
 			});
 
 			const openaiRes = await fetch(
@@ -519,6 +533,8 @@ module.exports = async (req, res) => {
 								contentType: contentType,
 								fileId: fileId,
 								firestorePath: `image_files/${fileId}`,
+								qid: qid || null,
+								response_id: response_id || null,
 							}).catch((error) => {
 								console.error("❌ Error logging to Firestore:", error);
 							});
@@ -548,6 +564,8 @@ module.exports = async (req, res) => {
 						error: fileError.message,
 						openaiStatus: openaiRes.status,
 						openaiStatusText: openaiRes.statusText,
+						qid: qid || null,
+						response_id: response_id || null,
 					});
 
 					return res.status(500).json({
@@ -621,7 +639,7 @@ module.exports = async (req, res) => {
 				}
 
 				// Log tool interactions to separate collection
-				await logToolInteractions(data);
+				await logToolInteractions(data, qid, response_id);
 
 				// Check if this is a run status response and if the run is completed
 				if (
@@ -646,7 +664,7 @@ module.exports = async (req, res) => {
 						);
 
 						// Fetch and log run steps asynchronously (don't wait for it to complete)
-						logRunSteps(threadId, runId).catch((err) => {
+						logRunSteps(threadId, runId, qid, response_id).catch((err) => {
 							console.error("❌ Error logging run steps:", err);
 						});
 					}
@@ -661,6 +679,8 @@ module.exports = async (req, res) => {
 					responseTime,
 					responseSize: text.length,
 					responseData: JSON.stringify(data).substring(0, 10000), // Increased limit for complete responses
+					qid: qid || null,
+					response_id: response_id || null,
 				});
 
 				return res.status(openaiRes.status).json(data);
@@ -678,6 +698,8 @@ module.exports = async (req, res) => {
 					responseTime,
 					error: "JSON parse error",
 					rawResponse: text.substring(0, 1000), // Truncate large responses
+					qid: qid || null,
+					response_id: response_id || null,
 				});
 
 				return res.status(500).json({
@@ -695,6 +717,8 @@ module.exports = async (req, res) => {
 				type: "error",
 				error: err.message,
 				stack: err.stack?.substring(0, 1000), // Truncate large stack traces
+				qid: qid || null,
+				response_id: response_id || null,
 			});
 
 			return res
